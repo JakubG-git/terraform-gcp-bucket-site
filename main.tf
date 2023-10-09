@@ -1,36 +1,72 @@
-#Bucket for website
+#Create bucket for website files
 resource "google_storage_bucket" "website" {
     name = "website-bucket-terraform"
     location = var.gcp_region
+    #Uncomment the following after creating the bucket
+    # website {
+    #     main_page_suffix = "index.html"
+    #     not_found_page = "404.html"
+    # }
 }
 
-#Make files public
-resource "google_storage_object_access_control" "public_rule" {
+#Upload index.html to bucket
+resource "google_storage_bucket_object" "file_src_index" {
+    name = "index.html"
     bucket = google_storage_bucket.website.name
-    object = google_storage_bucket_object.file_src.name
+    source = "files/index.html"
+    content_type = "text/html"
+    #add mainpage surfix
+}
+#Upload 404.html to bucket
+resource "google_storage_bucket_object" "file_src_404" {
+    name = "404.html"
+    bucket = google_storage_bucket.website.name
+    source = "files/404.html"
+    content_type = "text/html"
+    #add 404 surfix
+}
+#Upload style.css to bucket
+resource "google_storage_bucket_object" "file_src_style" {
+    name = "style.css"
+    bucket = google_storage_bucket.website.name
+    source = "files/style.css"
+    content_type = "text/css"
+    #add css surfix
+}
+
+#Make index.html public in bucket
+resource "google_storage_object_access_control" "public_rule_index" {
+    bucket = google_storage_bucket.website.name
+    object = google_storage_bucket_object.file_src_index.name
+    role = "READER"
+    entity = "allUsers"
+}
+#Make 404.html public in bucket
+resource "google_storage_object_access_control" "public_rule_404" {
+    bucket = google_storage_bucket.website.name
+    object = google_storage_bucket_object.file_src_404.name
+    role = "READER"
+    entity = "allUsers"
+}
+#Make style.css public in bucket
+resource "google_storage_object_access_control" "public_rule_style" {
+    bucket = google_storage_bucket.website.name
+    object = google_storage_bucket_object.file_src_style.name
     role = "READER"
     entity = "allUsers"
 }
 
-#Website files
-resource "google_storage_bucket_object" "file_src" {
-    name = "index.html"
-    bucket = google_storage_bucket.website.name
-    source = "index.html"
-    content_type = "text/html"
-}
-
-#Reserve static IP
+#Reserve static IP for website load balancer
 resource "google_compute_global_address" "website_ip" {
     name = "website-ip"
 }
 
-#Get the managed zone
+#Get the managed zone and save for later use
 data "google_dns_managed_zone" "website_zone" {
     name = var.gcp_dns_zone
 }
 
-#Add IP to DNS
+#Add IP to DNS record (Adding A type record to DNS)
 resource "google_dns_record_set" "website_dns" {
     name = "${var.gcp_subdomain}.${data.google_dns_managed_zone.website_zone.dns_name}"
     managed_zone = data.google_dns_managed_zone.website_zone.name
@@ -39,14 +75,14 @@ resource "google_dns_record_set" "website_dns" {
     rrdatas = [google_compute_global_address.website_ip.address]
 }
 
-#Add bucket to CDN
+#Add bucket to Cloud Delivery Network (CDN)
 resource "google_compute_backend_bucket" "website_bucket" {
     name = "website-bucket"
     bucket_name = google_storage_bucket.website.name
     enable_cdn = true
 }
 
-#GCP url map
+#Create basic URL map
 resource "google_compute_url_map" "website_map" {
     name = "website-map"
     default_service = google_compute_backend_bucket.website_bucket.self_link
@@ -63,7 +99,12 @@ resource "google_compute_url_map" "website_map" {
         }
     }
 }
-#HTTP redirect
+
+######################
+#                    #
+#Enable HTTP redirect#
+#                    #
+######################
 resource "google_compute_url_map" "http-redirect" {
   name = "http-redirect"
 
@@ -85,6 +126,11 @@ resource "google_compute_global_forwarding_rule" "http-redirect" {
   ip_address = google_compute_global_address.website_ip.address
   port_range = "80"
 }
+######################
+#                    #
+#End of HTTP Redirect#
+#                    #
+######################
 
 #SSL certificate
 resource "google_compute_managed_ssl_certificate" "website_cert" {

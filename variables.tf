@@ -1,4 +1,5 @@
-#Variables for website
+#Variable declarations for the GCP website
+#Fill those in with your own values in the .tfvars file
 variable "gcp_cred_file" {
   
 }
